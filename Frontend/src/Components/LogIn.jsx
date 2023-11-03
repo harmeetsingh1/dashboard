@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 function LogIn() {
 
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loggedIn, setLoggedIn] = useState(false);
 
   const handleLogin = async () => {
     try {
@@ -18,6 +19,9 @@ function LogIn() {
 
       if (response.ok) {
         // Login successful, update authentication state or redirect
+        const { token } = await response.json();
+        localStorage.setItem('token', token);
+        setLoggedIn(true);
         console.log('Login successful');
       } else {
         // Login failed, handle error
@@ -28,11 +32,37 @@ function LogIn() {
     }
   };
 
+  const handleLogout = () => {
+    // Remove the token from local storage
+    localStorage.removeItem('token');
+    setLoggedIn(false);
+  };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      setLoggedIn(true);
+    }
+  }, []);
+
   return (
     <div className="flex justify-center m-8 ml-52 ">
       <div className="bg-grey-lighter max-w-lg  flex flex-col mt-32">
         <div className="container max-w-sm mx-auto flex-1 flex flex-col items-center justify-center px-2">
           <div className="bg-white px-6 py-8 rounded shadow-md text-black w-full">
+          {loggedIn ? (
+              <div>
+                <h1 className="mb-4 text-3xl text-center">Successfully Logged In!</h1>
+                <button
+                  type="button"
+                  className="w-full text-center py-3 rounded bg-blue-600 hover:bg-green-dark focus:outline-none text-white my-1"
+                  onClick={handleLogout}
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <div>
             <h1 className="mb-8 text-3xl text-center">Login</h1>
 
             <input
@@ -58,7 +88,8 @@ function LogIn() {
             >
               Login
             </button>
-
+            </div>
+ )}
             <div className="text-center text-sm text-grey-dark mt-4">
               {/* By signing up, you agree to the 
                         <a className="no-underline border-b border-grey-dark text-grey-dark" href="#">
@@ -68,6 +99,7 @@ function LogIn() {
                             Privacy Policy
                         </a> */}
             </div>
+            
           </div>
 
           {/* <div className="text-grey-dark mt-6">

@@ -6,6 +6,7 @@ import CSVUploader from './Components/CSVUploader';
 import LeadWindow from './Components/LeadWindow';
 import LogIn from './Components/LogIn';
 import SignUp from './Components/SignUp';
+import Users from './Components/Users';
 
 
 
@@ -17,6 +18,7 @@ function App() {
         <Routes>
         <Route path='/' element={<Menu/>}/>
          {/* <Route path='/question' element={<Question/>}/> */}
+         <Route path='/users' element={<Users/>}/>
          <Route path='/upload' element={<CSVUploader/>}/>
          <Route path='/leads' element={<LeadWindow/>}/>
          <Route path='/login' element={<LogIn/>}/>

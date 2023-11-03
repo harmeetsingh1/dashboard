@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
+import Button from 'react-bootstrap/Button';
+import ReactPaginate from 'react-paginate';
+
 
 function LeadWindow() {
   const [leads, setLeads] = useState([]);
@@ -11,44 +14,98 @@ function LeadWindow() {
   const [selectedLeadIndex, setSelectedLeadIndex] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarOpenIndex, setCalendarOpenIndex] = useState(null);
-  const [inputFieldValues, setInputFieldValues] = useState(Array(leads.length).fill(null));
+  const [inputFieldValues, setInputFieldValues] = useState(
+    Array(leads.length).fill(null)
+  );
 
-  const [remarks, setRemarks] = useState(Array(leads.length).fill(''));
-
-
-
+  const [remarks, setRemarks] = useState(Array(leads.length).fill(""));
+  const [userNames, setUserNames] = useState([]);
+  const [reloadOnce, setReloadOnce] = useState(false);
+  const [filterValue, setFilterValue] = useState('');
+  
 
   useEffect(() => {
     fetchLeads();
   }, []);
 
   useEffect(() => {
+    // Fetch user names from the backend when the component mounts
+    fetchUserNames();
+  }, []);
+
+  useEffect(() => {
+    console.log("Updated Remarks:", remarks);
+  }, [remarks]); 
+
+ 
+
+  const handleRemarksChange = (value, localIndex) => {
+    console.log("Handle Remarks Change Called");
+    //const globalIndex = getGlobalIndex(localIndex);
+    const globalIndex = startIdx + localIndex;
+    setRemarks((prevRemarks) => {
+      const newRemarks = [...prevRemarks];
+      console.log("Remarks before update:", newRemarks);
+      newRemarks[globalIndex] = value;
+      console.log("Remarks after update:", newRemarks);
+      console.log("Local Index:", localIndex);
+      console.log("Global Index:", globalIndex);
+      return newRemarks;
+    });
+  };
+  
+
+  const fetchUserNames = async () => {
+    try {
+      const response = await fetch("http://localhost:3001/user-names");
+      const result = await response.json();
+
+      if (response.ok) {
+        setUserNames(result.userNames);
+        
+      } else {
+        console.error("Error fetching user names:", result.message);
+      }
+    } catch (error) {
+      console.error("Error fetching user names:", error);
+    }
+  };
+
+  
+  
+  
+  useEffect(() => {
     // Initialize selectedDate based on leads data
     setSelectedDate(leads.map(() => null));
 
     setInputFieldValues(leads.map(() => null));
+
   }, [leads]);
 
-  // useEffect(() => {
-  //   // Initialize ref array based on leads data
-  //   inputRefs.current = leads.map(() => useRef(null));
-  // }, [leads]);
+  const itemsPerPage = 50; // Set the number of items per page
+  const [currentPage, setCurrentPage] = useState(0);
+
+  const pageCount = Math.ceil(leads.length / itemsPerPage);
+
+  const handlePageChange = ({ selected }) => {
+    setCurrentPage(selected);
+  };
 
   // useEffect(() => {
-  //   // Initialize selectedDate based on leads data
-  //   if (leads.length > 0) {
-  //     // Only set the state if there are leads
-  //     setSelectedDate((prevSelectedDate) => {
-  //       // Ensure that the length of selectedDate matches the length of leads
-  //       const newSelectedDate = [...prevSelectedDate];
-  //       while (newSelectedDate.length < leads.length) {
-  //         newSelectedDate.push(null);
-  //       }
-  //       return newSelectedDate;
-  //     });
+  //   // Check if the current page is the first page
+  //   if (currentPage === 0) {
+  //     // Trigger a hard refresh
+  //     window.location.reload();
   //   }
-  // }, [leads]);
-  
+  // }, [currentPage]);
+
+  //const displayedLeads = leads.slice(currentPage * itemsPerPage, (currentPage + 1) * itemsPerPage);
+
+  const getGlobalIndex = (localIndex) => currentPage * itemsPerPage + localIndex;
+
+  const startIdx = currentPage * itemsPerPage;
+  const endIdx = (currentPage + 1) * itemsPerPage;
+  const displayedLeads = leads.slice(startIdx, endIdx);
 
 
   const fetchLeads = async () => {
@@ -69,18 +126,24 @@ function LeadWindow() {
         );
         setLeads(leadsWithSerialNumber);
 
-        const datesFromLeads =  result.leads.map((lead) => (lead.formatted_last_updated  ? new Date(lead.formatted_last_updated) : null));
+        const datesFromLeads = result.leads.map((lead) =>
+          lead.formatted_last_updated
+            ? new Date(lead.formatted_last_updated)
+            : null
+        );
 
-        console.log("front end lead dates:" ,datesFromLeads)
+        console.log("front end lead dates:", datesFromLeads);
 
         setSelectedDate(datesFromLeads);
 
-        const remarksFromLeads = result.leads.map((lead) => lead.Remarks || '');
-       
-       
+        const remarksFromLeads = result.leads.map((lead) => lead.Remarks || "");
+
         // setRemarks(remarksFromLeads);
 
         setRemarks(leadsWithSerialNumber.map((lead) => lead.remarks));
+        //setRemarks(leadsWithSerialNumber.map((lead) => lead.someNestedProperty.remarks));
+
+        
 
         console.log("Leads with serial numbers:", leadsWithSerialNumber);
       } else {
@@ -91,23 +154,17 @@ function LeadWindow() {
     }
   };
 
-  const handleLeadStageChange = (index, selectedLeadStage) => {
+  const handleLeadStageChange = (localIndex, selectedLeadStage) => {
     // Update the leadStage value for the specific lead
+    const globalIndex = getGlobalIndex(localIndex);
     setLeads((prevLeads) =>
       prevLeads.map((lead, i) =>
-        i === index ? { ...lead, selectedLeadStage: selectedLeadStage } : lead
+        i === globalIndex ? { ...lead, selectedLeadStage: selectedLeadStage } : lead
       )
     );
   };
 
-  const handleRemarksChange = (value, index) => {
-    setRemarks((prevRemarks) => {
-      const newRemarks = [...prevRemarks];
-      newRemarks[index] = value;
-      return newRemarks;
-    });
-    console.log("new remarks are:",remarks)
-  };
+ 
 
   const formatDate = (date) => {
     if (!date) return null;
@@ -119,13 +176,14 @@ function LeadWindow() {
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  const handleDateChange = (date, index) => {
+  const handleDateChange = (date, localIndex) => {
+    const globalIndex = getGlobalIndex(localIndex);
     console.log("Incoming date:", date);
     console.log("Before Update - selectedDate:", selectedDate);
     // ... rest of the code
 
-    console.log("Type of selectedDate[index]:", typeof selectedDate[index]);
-    console.log("Value of selectedDate[index]:", selectedDate[index]);
+    console.log("Type of selectedDate[localIndex]:", typeof selectedDate[globalIndex]);
+    console.log("Value of selectedDate[localIndex]:", selectedDate[globalIndex]);
 
     if (!(date instanceof Date) || isNaN(date.getTime())) {
       console.error("Invalid date:", date);
@@ -143,14 +201,11 @@ function LeadWindow() {
 
     setSelectedDate((prevDates) => {
       const newDates = [...prevDates];
-      newDates[index] = date;
+      newDates[globalIndex] = date;
       return newDates;
     });
 
     // Update the input field value using useState
-  
-
-    
 
     console.log("Selected date after update:", date);
 
@@ -169,9 +224,8 @@ function LeadWindow() {
       return newSelectedDate;
     });
   };
-  
 
- 
+  
 
   const handleUpdateLeadStages = async (index, i) => {
     console.log("Before Update - selectedLeadIndex:", selectedLeadIndex);
@@ -190,16 +244,13 @@ function LeadWindow() {
             ? selectedDateValue.toISOString().split("T")[0]
             : null;
 
-
-           
-        return {
+ return {
           compositeKey,
+          Assign_to: lead.Assign_to,
           selectedLeadStage: lead.selectedLeadStage,
-          // date: formatDate(selectedDateValue),
           date: formattedDate,
-          remarks: remarks[leadIndex], 
+          remarks: remarks[leadIndex],  
         };
-        
       });
 
       console.log("Updated Leads:", updatedLeads);
@@ -221,56 +272,19 @@ function LeadWindow() {
             ...lead,
             serialNumber: index + 1,
             selectedLeadStage: lead["Lead Stage"],
-
-            remarks: lead.remarks
+            remarks: lead.remarks,
           }))
+
+         
         );
 
-        
-        // setSelectedDate(updatedLeads.map((lead) => new Date(lead.date)));
-        // setSelectedDate(result.updatedLeads.map((lead) => new Date(lead.date)));
-      
-      
-        // setSelectedDate(
-        //   result.updatedLeads.map((lead) =>
-        //     lead.date ? new Date(lead.date) : null
-        //   )
-        // );
+        setSelectedDate(result.updatedLeads.map((lead) => new Date(lead.date)));
+        console.log("After Update - selectedDate:", selectedDate);
 
-     
-
-      //   updatedLeads.forEach((lead, leadIndex) => {
-      //     const inputField = document.getElementById(`dateInput-${leadIndex}`);
-      //     if (inputField) {
-      //       inputField.value = lead.date;
-      //        setSelectedDate((prevSelectedDate) => {
-      //   const updatedSelectedDate = [...prevSelectedDate];
-      //   updatedSelectedDate[leadIndex] = new Date(lead.date);
-      //   return updatedSelectedDate;
-      // });
-      //     }
-      //   });
-     
-      // updatedLeads.forEach((lead, leadIndex) => {
-      //   const inputField = document.getElementById(`dateInput-${leadIndex}`);
-      //   if (inputField) {
-      //     inputField.value = lead.date
-      //     ? lead.date.toLocaleDateString()
-      //     : "No date Available";
-      //   }
-
-      //   setSelectedDate([...selectedDate]);
-
-      //   selectedDate[leadIndex] = lead.date ? new Date(lead.date) : null;
-      // });
-
-      
-
-
-      setSelectedDate(result.updatedLeads.map((lead) => new Date(lead.date)));
-      
-
-      console.log("After Update - selectedDate:", selectedDate);
+        if (!reloadOnce) {
+          setReloadOnce(true);
+          window.location.reload();
+        }
       } else {
         console.error("Error updating lead stages:", response.statusText);
       }
@@ -284,51 +298,137 @@ function LeadWindow() {
     //setSelectedDate(Array(leads.length).fill(null));
     setSelectedLeadIndex(null);
   };
+
+   
+
+  const handleAssignToChange = (selectedUser, localIndex) => {
+    // Update the assigned user for the specific lead
+    const globalIndex = getGlobalIndex(localIndex);
+    console.log("Selected User:", selectedUser);
+  
+    setLeads((prevLeads) => {
+      const updatedLeads = prevLeads.map((lead, i) =>
+        i === globalIndex ? { ...lead, Assign_to: selectedUser } : lead
+      );
+  
+      console.log("Updated leads array:", updatedLeads);
+  
+      return updatedLeads;
+    });
+  };
+
+  const filteredLeads = displayedLeads.filter((lead) => {
+    // Step 2: Filter leads based on the selected filter value
+    console.log('Lead Status:', lead.selectedLeadStage);
+    console.log('Filter Value:', filterValue);
+    //return filterValue === '' || lead.selectedLeadStage === filterValue;
+    return filterValue === '' || lead.selectedLeadStage.trim() === filterValue.trim();
+
+  });
+
+
+
+  
   
 
   return (
-    <div>
-      <h1 className="mt-32">Leads Window</h1>
+    <div className="">
+      {/* <h1 className="mt-32">Leads Window</h1> */}
+      <div className="mb-4 mt-36">
+        <label className="mr-2">Filter by Existing Status:</label>
+        <select
+          value={filterValue}
+          onChange={(e) => setFilterValue(e.target.value)}
+        >
+          <option value="">All</option>
+          <option value="Fresh Leads">Fresh Leads</option>
+          <option value="Call Received">Call Received</option>
+          <option value="Call Not Received">Call Not Received</option>
+          <option value="Not Interested">Not Interested</option>
+          <option value="Interested">Interested</option>
+          <option value="Converted">Converted</option>
+        </select>
+      </div>
       {/* <h2 className='flex justify-center'>Leads</h2> */}
-      <table className="ml-96">
-        <thead>
-          <tr>
-            {/* <th>ID</th> */}
-            <th>Sr.No.</th>
-            <th>Name</th>
-            <th>Mobile Number</th>
-            <th>Email</th>
-            <th>Existing Status</th>
-            {/* <th>Current Status</th> */}
-            <th>Next Follow up</th>
-            <th>Remarks</th>
+      <div class="overflow-x-auto tabletop ">
+       <table className="table-bel ml-72 min-w-full  text-left text-sm font-dark border-collapse sticky">
+       <thead className="bg-black text-white ">
+          <tr className="border-r">
+            
+            <th  className="p-2">Sr.No.</th>
+            <th  className="p-2 ">Name</th>
+            <th  className="p-2 ">Mobile Number</th>
+            <th  className="p-2 ">Email</th>
+            <th  className="p-1 ">Assign to</th>
+            <th  className="p-2 ">Existing Status</th>
+            <th  className="p-2 ">Next Follow up</th>
+            <th  className="p-2">Remarks</th>
           </tr>
         </thead>
-        <tbody>
-          {leads?.map((lead, index) => (
-            <tr key={lead.serialNumber ?? index}>
-              {/* <td>{lead.id}</td> */}
-              <td>{lead.serialNumber}</td>
-              <td>{lead["Name"]}</td>
-              <td>{lead["Mobile Number"]}</td>
-              <td>{lead.Email}</td>
+        
+        <tbody className="overflow-y-scroll" >
+          {filteredLeads?.map((lead, index) => (
+            <tr  
+               key={lead.compositeKey} 
+               //className="border-b dark:border-neutral-500 flex"
+               className={`border-t border-gray-200 ${
+                lead.selectedLeadStage === 'Not Interested'
+                  ? 'bg-[#ff3333]'
+                  : lead.selectedLeadStage === 'Interested'
+                  ? 'bg-lime-300'
+                  :  lead.selectedLeadStage === 'Call Received'
+                  ? 'bg-amber-300'
+                  :  lead.selectedLeadStage === 'Converted'
+                  ? 'bg-cyan-300'
+                  :  lead.selectedLeadStage === 'Fresh Leads'
+                  ? 'bg-white'
+                  :  lead.selectedLeadStage === 'Call Not Received'
+                  ? 'bg-white'
+                  : ''
+              }`}
+            >
+              
+              <td className="p-2">{lead.serialNumber}</td>
+              <td className="p-2" >{lead["Name"]}</td>
+              <td className="p-2">{lead["Mobile Number"]}</td>
+              <td className="p-2">{lead.Email}</td>
 
-              <td>
-                {/* Dropdown for Lead Stage */}
+              <td className="p-2">
                 <select
-                  value={lead.selectedLeadStage}
-                  onChange={(e) => handleLeadStageChange(index, e.target.value)}
+                  value={lead.Assign_to || ""}
+                  onChange={(e) => handleAssignToChange(e.target.value, index)}
+                  className="w-full"
                 >
-                  <option value="Fresh">Fresh</option>
-                  <option value="Follow-up">Follow-up</option>
-                  <option value="Not Able to Connect">
-                    Not Able to Connect
-                  </option>
-                  <option value="Not Interested">Not Interested</option>
+            <option value="">Select User</option>
+              {userNames
+                    .filter((userName) => userName !== null)
+                    .map((userName, index) => (
+                      <option key={index} value={userName}>
+                        {userName}
+                      </option>
+                    ))}
                 </select>
               </td>
 
-              <td style={{ position: "relative" }}>
+              <td className="p-2">
+               
+                <select
+                  value={lead.selectedLeadStage}
+                  onChange={(e) => handleLeadStageChange(index, e.target.value)}
+                  className="w-full"
+                >
+                  <option value="Fresh Leads">Fresh Leads</option>
+                  <option value="Call Received">Call Received</option>
+                  <option value="Call Not Received">
+                    Call Not Received
+                  </option>
+                  <option value="Not Interested">Not Interested</option>
+                  <option value="Interested">Interested</option>
+                  <option value="Converted">Converted</option>
+                </select>
+              </td>
+
+              <td style={{ position: "relative" }} className="p-2">
                 <input
                   type="text"
                   onFocus={() => {
@@ -336,19 +436,14 @@ function LeadWindow() {
                     setSelectedLeadIndex(index);
                     setIsCalendarOpen(true);
                   }}
-                 
-                  
-
                   value={
                     lead.last_updated
                       ? new Date(lead.last_updated).toLocaleDateString()
                       : "No date Available"
                   }
-
                   onChange={handleDateChange1}
-                 readOnly
+                  readOnly
                 />
-              
 
                 {isCalendarOpen && calendarOpenIndex === index && (
                   <div style={{ position: "absolute", top: "100%", zIndex: 1 }}>
@@ -360,23 +455,54 @@ function LeadWindow() {
                 )}
               </td>
 
-              <td>
+              <td className="p-2">
                 <textarea
-                  value={remarks[index]}
-                  //onChange={(e) => handleRemarksChange(e, index)}
+                  value={remarks[getGlobalIndex(index)]}
+                 
                   onChange={(e) => handleRemarksChange(e.target.value, index)}
+                  
+                  // value={remarks[getGlobalIndex(index)]}
+                  //   onChange={(e) => handleRemarksChange(e.target.value, getGlobalIndex(index))}
                   rows="3"
                   cols="30"
                   maxLength="255"
-                 
+                  className="w-full"
                 />
               </td>
             </tr>
           ))}
         </tbody>
-      </table>
 
-      <button type="button"  onClick={handleUpdateLeadStages}>Update Lead Stages</button>
+
+
+      </table>
+      
+      </div>
+
+      
+
+
+     <div className="container flex flex-row-reverse justify-evenly items-baseline mt-8  ">
+     
+     <ReactPaginate
+        previousLabel={'Previous'}
+        nextLabel={'Next'}
+        breakLabel={'...'}
+        pageCount={pageCount}
+        marginPagesDisplayed={2}
+        pageRangeDisplayed={5}
+        onPageChange={handlePageChange}
+        containerClassName={'pagination'}
+        activeClassName={'active'}
+      />
+       <Button type="button" onClick={handleUpdateLeadStages} className="mb-4 flex justify-center">
+        Update Leads
+      </Button>
+      </div>
+     
+      
+     
+      
     </div>
   );
 }
