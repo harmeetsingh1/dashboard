@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const multer = require("multer");
 const csv = require("fast-csv");
 const cors = require("cors");
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = 3001;
@@ -47,6 +48,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
             \`Name\` CHAR(30),
             \`Mobile Number\` VARCHAR(15),
             Email VARCHAR(30),
+            \`Assign_to\` CHAR(30),
             \`Lead Stage\` VARCHAR(30) DEFAULT 'Fresh',
             compositeKey VARCHAR(255) NOT NULL,
             uploadTimestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -63,13 +65,14 @@ app.post("/upload", upload.single("file"), async (req, res) => {
             : null;
           await connection.execute(
             `
-            INSERT INTO uploaded_values( \`Name\`, \`Mobile Number\`, Email, \`Lead Stage\`, compositeKey, uploadTimestamp, last_updated, remarks) 
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP,?, ?);
+            INSERT INTO uploaded_values( \`Name\`, \`Mobile Number\`, Email, \`Assign_to\`, \`Lead Stage\`, compositeKey, uploadTimestamp, last_updated, remarks) 
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP,?, ?);
           `,
             [
-              row.Name,
-              row["Mobile Number"],
-              row.Email,
+              row.Name || null,
+              row["Mobile Number"] || null,
+              row.Email || null,
+              row.Assign_to || null,
               "Fresh",
               `${row.Name}_${row["Mobile Number"]}_${row.Email}`,
               formattedDate,
@@ -102,18 +105,36 @@ app.get("/leads", async (req, res) => {
 
     );
 
+    const [usersResult] = await connection.execute(
+      "SELECT `Full Name` FROM signup"
+    );
+
     await connection.end();
+
+    const userNames = usersResult.map((user) => user['Full Name']);
+
+    //console.log("Fetched leads with dates:", leadsResult);
+    console.log("Fetched user names:", userNames);
+
+    
+
 
     console.log("Fetched leads with dates:", rows);
 
     const datesFromLeads  = rows.map((lead) => ({
       ...lead,
       date: lead.formatted_last_updated ? new Date(lead.formatted_last_updated) : null,
+      userNames,
     }));
 
-   
-
-    res.status(200).json({ leads: datesFromLeads });
+    const leadsWithUsers = datesFromLeads.map((lead) => ({
+      ...lead,
+      userNames,
+    }));
+  
+    // res.status(200).json({ leads: leadsWithUsers });
+    // res.status(200).json({ leads: datesFromLeads });
+    res.status(200).json({ leads: leadsWithUsers, userNames });
 
     // res.status(200).json({ leads: rows });
   } catch (error) {
@@ -124,12 +145,13 @@ app.get("/leads", async (req, res) => {
 
 app.post("/update-leads", async (req, res) => {
   try {
+    console.log("Received data in update-leads endpoint:", req.body);
     const connection = await mysql.createConnection(dbConfig);
 
     const updates = req.body.leads.map(async (lead) => {
       const updateQuery = lead.date
-        ? "UPDATE uploaded_values SET `Lead Stage` = ?, `last_updated` = ?, `remarks` = ? WHERE CONCAT(`Name`, '_', `Mobile Number`, '_', `Email`) = ?"
-        : "UPDATE uploaded_values SET `Lead Stage` = ?, `remarks` = ? WHERE CONCAT(`Name`, '_', `Mobile Number`, '_', `Email`) = ?";
+        ? "UPDATE uploaded_values SET `Assign_to` = ?, `Lead Stage` = ?, `last_updated` = ?, `remarks` = ? WHERE CONCAT(`Name`, '_', `Mobile Number`, '_', `Email`) = ?"
+        : "UPDATE uploaded_values SET `Assign_to` = ? , `Lead Stage` = ?, `remarks` = ? WHERE CONCAT(`Name`, '_', `Mobile Number`, '_', `Email`) = ?";
 
       const formattedDate = lead.date
         ? new Date(lead.date).toISOString().split("T")[0]
@@ -143,12 +165,15 @@ app.post("/update-leads", async (req, res) => {
 
       const queryParams = lead.date
       ? [
+          lead.Assign_to || null,
           lead.selectedLeadStage || null,
           formattedDate || null,
           lead.remarks || null,
           lead.compositeKey,
         ]
-      : [lead.selectedLeadStage || null, lead.remarks || null, lead.compositeKey];
+      : [lead.Assign_to || null, lead.selectedLeadStage || null, lead.remarks || null, lead.compositeKey];
+
+      console.log("Received leads for update:", req.body.leads);
 
       console.log("Update query:", updateQuery);
       console.log("Query parameters:", queryParams);
@@ -179,10 +204,6 @@ app.post("/update-leads", async (req, res) => {
   }
 });
 
-
-
-// Assuming you already have the required dependencies and database connection
-
 app.post('/signup', async (req, res) => {
   try {
     const { fullname, email, password } = req.body;
@@ -205,7 +226,6 @@ app.post('/signup', async (req, res) => {
   }
 });
 
-
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -221,11 +241,16 @@ app.post('/login', async (req, res) => {
       [email, password]
     );
 
+    const user = { email: req.body.email }; // Change this to your user object
+    const token = jwt.sign(user, 'trustisthekey', { expiresIn: '1h' });
+
+    // res.status(200).json({ token });
+
     await connection.end();
 
     if (rows.length > 0) {
       // User authenticated
-      res.status(200).json({ message: 'Login successful' });
+      res.status(200).json({ message: 'Login successful', token});
     } else {
       // Authentication failed
       res.status(401).json({ message: 'Invalid email or password' });
@@ -233,6 +258,46 @@ app.post('/login', async (req, res) => {
   } catch (error) {
     console.error('Error during login:', error);
     res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+app.get('/users', async (req, res) => {
+  try {
+    const connection = await mysql.createConnection(dbConfig);
+
+    const [rows] = await connection.execute(
+      'SELECT `Full Name`, Email FROM signup'
+    );
+
+    await connection.end();
+
+    res.status(200).json({ users: rows });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// Add a new endpoint in the backend
+app.get("/user-names", async (req, res) => {
+  try {
+    const connection = await mysql.createConnection(dbConfig);
+
+    // Fetch names of signed-up users from the database
+    const [usersResult] = await connection.execute(
+      "SELECT `Full Name` FROM signup"
+    );
+
+    await connection.end();
+
+    // Extract names from the result
+    const userNames = usersResult.map((user) => user["Full Name"]);
+
+    res.status(200).json({ userNames });
+  } catch (error) {
+    console.error("Error fetching user names:", error);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
 
